@@ -118,10 +118,10 @@ class KittiOdometryDataset(Dataset):
         return None, None
 
     def preprocess_image(self, img: Image.Image, crop_box=None):
-        # print(f"Got img size {img.size}") # s20 (1241, 376); s04--s12 (1226, 370)
+        # print(f"Got img size {img.size}") # s20, s00 (1241, 376); s04--s12 (1226, 370)
         if crop_box:
             img = img.crop(crop_box)
-            # print(f"Crop img to {img.size}") # s20 (753, 376); s04--s12 (740, 370)
+            # print(f"Crop img to {img.size}") # s20, s00 (753, 376); s04--s12 (740, 370)
         if self.target_image_size:
             img = img.resize((self.target_image_size[1], self.target_image_size[0]), resample=Image.Resampling.BILINEAR)
             # print(f"Resize img to {img.size}") # (512, 256)
@@ -248,10 +248,11 @@ class KittiOdometryDataset(Dataset):
         #         mask = dso_depth == 0
         #         dso_depth[mask] = keyframe_depth[mask]
         #         keyframe_depth = dso_depth
-
-        keyframe = self.preprocess_image(
-            (dataset.get_cam0 if not self.use_color else dataset.get_cam2)(index + self._offset),
-            self._crop_boxes[dataset_index])
+        keyframe_orig = (dataset.get_cam0 if not self.use_color else dataset.get_cam2)(index + self._offset)
+        timestamp = dataset.timestamps[index + self._offset].total_seconds()
+        # print(timestamp)
+        
+        keyframe = self.preprocess_image(keyframe_orig, self._crop_boxes[dataset_index])
         keyframe_pose = torch.tensor(dataset.poses[index + self._offset], dtype=torch.float32)
 
         frames = [self.preprocess_image((dataset.get_cam0 if not self.use_color else dataset.get_cam2)(index + self._offset + i + self.offset_d),
@@ -262,6 +263,8 @@ class KittiOdometryDataset(Dataset):
                  range(-(self.frame_count // 2) * self.dilation, ((self.frame_count + 1) // 2) * self.dilation + 1, self.dilation) if i != 0]
 
         data = {
+            "keyframe_orig": np.array(keyframe_orig),
+            "timestamp": timestamp,
             "keyframe": keyframe,
             "keyframe_pose": keyframe_pose,
             "keyframe_intrinsics": keyframe_intrinsics,
