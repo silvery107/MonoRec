@@ -82,12 +82,12 @@ class KittiOdometryDataset(Dataset):
         intrinsics_box = [self.compute_target_intrinsics(dataset, target_image_size, use_color) for dataset in
                           self._datasets]
         self._crop_boxes = [b for _, b in intrinsics_box]
-        if self.dso_depth:
-            self.dso_depth_parameters = [self.get_dso_depth_parameters(dataset) for dataset in self._datasets]
-        elif not self.lidar_depth:
-            self._depth_crop_boxes = [
-                self.compute_depth_crop(self.dataset_dir / "sequences" / s / depth_folder) for s in
-                self.sequences]
+        # if self.dso_depth:
+        #     self.dso_depth_parameters = [self.get_dso_depth_parameters(dataset) for dataset in self._datasets]
+        # elif not self.lidar_depth:
+        #     self._depth_crop_boxes = [
+        #         self.compute_depth_crop(self.dataset_dir / "sequences" / s / depth_folder) for s in
+        #         self.sequences]
         self._intrinsics = [format_intrinsics(i, self.target_image_size) for i, _ in intrinsics_box]
         self.dilation = dilation
         self.use_color = use_color
@@ -118,10 +118,13 @@ class KittiOdometryDataset(Dataset):
         return None, None
 
     def preprocess_image(self, img: Image.Image, crop_box=None):
+        # print(f"Got img size {img.size}") # s20 (1241, 376); s04--s12 (1226, 370)
         if crop_box:
             img = img.crop(crop_box)
+            # print(f"Crop img to {img.size}") # s20 (753, 376); s04--s12 (740, 370)
         if self.target_image_size:
-            img = img.resize((self.target_image_size[1], self.target_image_size[0]), resample=Image.BILINEAR)
+            img = img.resize((self.target_image_size[1], self.target_image_size[0]), resample=Image.Resampling.BILINEAR)
+            # print(f"Resize img to {img.size}") # (512, 256)
         if self.use_color_augmentation:
             img = self.color_transform(img)
         image_tensor = torch.tensor(np.array(img).astype(np.float32))
@@ -226,24 +229,25 @@ class KittiOdometryDataset(Dataset):
 
         dataset = self._datasets[dataset_index]
         keyframe_intrinsics = self._intrinsics[dataset_index]
-        if not (self.lidar_depth or self.dso_depth):
-            keyframe_depth = self.preprocess_depth(np.load(depth_folder / f"{(index + self._offset):06d}.npy"), self._depth_crop_boxes[dataset_index]).type(torch.float32).unsqueeze(0)
-        else:
-            if self.lidar_depth:
-                if not self.annotated_lidar:
-                    lidar_depth = 1 / torch.tensor(sparse.load_npz(depth_folder / f"{(index + self._offset):06d}.npz").todense()).type(torch.float32).unsqueeze(0)
-                    lidar_depth[torch.isinf(lidar_depth)] = 0
-                    keyframe_depth = lidar_depth
-                else:
-                    keyframe_depth = self.preprocess_depth_annotated_lidar(Image.open(depth_folder / f"{(index + self._offset):06d}.png"), self._crop_boxes[dataset_index]).unsqueeze(0)
-            else:
-                keyframe_depth = torch.zeros(1, self.target_image_size[0], self.target_image_size[1], dtype=torch.float32)
+        keyframe_depth = torch.zeros(1, self.target_image_size[0], self.target_image_size[1], dtype=torch.float32)
+        # if not (self.lidar_depth or self.dso_depth):
+        #     keyframe_depth = self.preprocess_depth(np.load(depth_folder / f"{(index + self._offset):06d}.npy"), self._depth_crop_boxes[dataset_index]).type(torch.float32).unsqueeze(0)
+        # else:
+        #     if self.lidar_depth:
+        #         if not self.annotated_lidar:
+        #             lidar_depth = 1 / torch.tensor(sparse.load_npz(depth_folder / f"{(index + self._offset):06d}.npz").todense()).type(torch.float32).unsqueeze(0)
+        #             lidar_depth[torch.isinf(lidar_depth)] = 0
+        #             keyframe_depth = lidar_depth
+        #         else:
+        #             keyframe_depth = self.preprocess_depth_annotated_lidar(Image.open(depth_folder / f"{(index + self._offset):06d}.png"), self._crop_boxes[dataset_index]).unsqueeze(0)
+        #     else:
+        #         keyframe_depth = torch.zeros(1, self.target_image_size[0], self.target_image_size[1], dtype=torch.float32)
 
-            if self.dso_depth:
-                dso_depth = self.preprocess_depth_dso(Image.open(depth_folder / f"{(index + self._offset):06d}.png"), self.dso_depth_parameters[dataset_index], self._crop_boxes[dataset_index]).unsqueeze(0)
-                mask = dso_depth == 0
-                dso_depth[mask] = keyframe_depth[mask]
-                keyframe_depth = dso_depth
+        #     if self.dso_depth:
+        #         dso_depth = self.preprocess_depth_dso(Image.open(depth_folder / f"{(index + self._offset):06d}.png"), self.dso_depth_parameters[dataset_index], self._crop_boxes[dataset_index]).unsqueeze(0)
+        #         mask = dso_depth == 0
+        #         dso_depth[mask] = keyframe_depth[mask]
+        #         keyframe_depth = dso_depth
 
         keyframe = self.preprocess_image(
             (dataset.get_cam0 if not self.use_color else dataset.get_cam2)(index + self._offset),
