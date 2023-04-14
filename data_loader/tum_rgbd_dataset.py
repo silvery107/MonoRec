@@ -49,6 +49,7 @@ class TUMRGBDDataset(Dataset):
         (pose_times, self._raw_poses) = self.load_pose_times(self.dataset_dir / "groundtruth.txt")
         (depth_times, self._depth_paths) = self.load_file_times(self.dataset_dir / "depth.txt")
 
+        self._pose_time = pose_times
         self._image_index = self.build_image_index(rgb_times, pose_times, depth_times)
         self._poses = self.build_pose(pose_times, self._raw_poses, rgb_times)
 
@@ -60,10 +61,14 @@ class TUMRGBDDataset(Dataset):
         offset = self._offset
 
         keyframe_intrinsics = self._intrinsics
-        keyframe = self.open_image(index + offset)
+        keyframe = self.open_image(index)
+        keyframe_orig = Image.open(self.dataset_dir / self._rgb_paths[index + offset])
+        timestamp = self._pose_time[index+offset]
         # keyframe_pose = self._raw_poses[self._image_index[index + offset, 0]]
         keyframe_pose = self._poses[index + offset]
-        keyframe_depth = self.open_depth(index + offset)
+        # keyframe_depth = self.open_depth(index + offset)
+        keyframe_depth = torch.zeros(1, self.target_image_size[0], self.target_image_size[1], dtype=torch.float32)
+
 
         frames = [self.open_image(index + i) for i in range(0, (frame_count + 1) * self.dilation, self.dilation) if i != offset]
         intrinsics = [self._intrinsics for _ in range(frame_count)]
@@ -71,6 +76,8 @@ class TUMRGBDDataset(Dataset):
         poses = [self._poses[index + i] for i in range(0, (frame_count + 1) * self.dilation, self.dilation) if i != offset]
 
         data = {
+            "keyframe_orig": np.array(keyframe_orig),
+            "timestamp": timestamp,
             "keyframe": keyframe,
             "keyframe_pose": keyframe_pose,
             "keyframe_intrinsics": keyframe_intrinsics,
@@ -127,7 +134,9 @@ class TUMRGBDDataset(Dataset):
         return times, poses
 
     def open_image(self, index):
-        i = torch.tensor(np.asarray(Image.open(self.dataset_dir / self._rgb_paths[index])), dtype=torch.float32)
+        i = np.asarray(Image.open(self.dataset_dir / self._rgb_paths[index]))
+        i = cv2.resize(i, (self.target_image_size[1], self.target_image_size[0]))
+        i = torch.tensor(i, dtype=torch.float32)
         i = i / 255 - .5
         i = i.permute(2, 0, 1)
         return i
